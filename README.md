@@ -99,6 +99,22 @@ OAuth user and bot tokens require `chat:write`. Users can edit their own message
 
 These tools do not implement a human approval UI. Configure the MCP client to require approval for **every** write, including in bypass modes; tool enablement and channel policies are not user consent. No automatic mutation retries are added. A timeout or lost response may have occurred after Slack applied the change: inspect state before a separately approved retry.
 
+### Scheduled messages
+
+`conversations_schedule_message`, `conversations_list_scheduled_messages` and
+`conversations_cancel_scheduled_message` require a Slack user OAuth token
+(`SLACK_MCP_XOXP_TOKEN`, `chat:write`) and an exact comma-separated channel-ID
+allowlist in `SLACK_MCP_SCHEDULING_CHANNELS`. A bot or browser session is not
+accepted. For a scheduling-only connection, put only these three names in
+`SLACK_MCP_ENABLED_TOOLS`; existing Slack connections can remain unchanged.
+
+Each call verifies `expected_user_id` and `expected_team_id` before reading the
+channel queue or writing. Creation accepts Unix seconds and optionally an exact
+parent `thread_ts`. Cancellation requires the queue's exact reservation ID,
+Unix timestamp and text SHA-256. A receipt is not proof of delivery; read the
+actual message or thread after the due time. Follow the caller's outbound
+policy and never retry a mutation with an unknown outcome.
+
 ### 6. reactions_add:
 Add an emoji reaction to a message in a public channel, private channel, or direct message (DM, or IM) conversation.
 

@@ -1393,6 +1393,15 @@ func (ap *ApiProvider) IsOAuth() bool {
 	return ok && client != nil && client.IsOAuth()
 }
 
+// SchedulingClient returns only the Web API client authenticated as an OAuth user.
+func (ap *ApiProvider) SchedulingClient() *slack.Client {
+	client, ok := ap.client.(*MCPSlackClient)
+	if !ok || client == nil || !client.IsOAuth() || client.IsBotToken() {
+		return nil
+	}
+	return client.slackClient
+}
+
 // slackUserIDPattern matches Slack user IDs (e.g., U07VCEPP4N5, W0123456789).
 var slackUserIDPattern = regexp.MustCompile(`^[UW][A-Z0-9]{2,}$`)
 

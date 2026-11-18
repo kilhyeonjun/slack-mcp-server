@@ -30,6 +30,9 @@ const (
 	ToolConversationsAddMessage     = "conversations_add_message"
 	ToolConversationsUpdateMessage  = "conversations_update_message"
 	ToolConversationsDeleteMessage  = "conversations_delete_message"
+	ToolScheduleMessage             = "conversations_schedule_message"
+	ToolListScheduledMessages       = "conversations_list_scheduled_messages"
+	ToolCancelScheduledMessage      = "conversations_cancel_scheduled_message"
 	ToolReactionsAdd                = "reactions_add"
 	ToolReactionsRemove             = "reactions_remove"
 	ToolAttachmentGetData           = "attachment_get_data"
@@ -57,6 +60,9 @@ var ValidToolNames = []string{
 	ToolConversationsAddMessage,
 	ToolConversationsUpdateMessage,
 	ToolConversationsDeleteMessage,
+	ToolScheduleMessage,
+	ToolListScheduledMessages,
+	ToolCancelScheduledMessage,
 	ToolReactionsAdd,
 	ToolReactionsRemove,
 	ToolAttachmentGetData,
@@ -225,6 +231,40 @@ func NewMCPServer(provider *provider.ApiProvider, logger *zap.Logger, enabledToo
 			mcp.WithString("channel_id", mcp.Required(), mcp.Description("Channel ID or cached #channel / @username_dm name.")),
 			mcp.WithString("timestamp", mcp.Required(), mcp.Description("Exact timestamp of the message to delete (not its thread parent), in format 1234567890.123456.")),
 		), conversationsHandler.ConversationsDeleteMessageHandler)
+	}
+
+	for _, reservation := range []struct {
+		name, description     string
+		readOnly, destructive bool
+		options               []mcp.ToolOption
+		handle                func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+	}{
+		{ToolScheduleMessage, "Schedule one text message or thread reply as the bound Slack OAuth user. A receipt does not establish delivery.", false, false, []mcp.ToolOption{
+			mcp.WithString("text", mcp.Required()),
+			mcp.WithString("thread_ts", mcp.Description("Exact parent timestamp; omit for a top-level message.")),
+			mcp.WithNumber("post_at", mcp.Required(), mcp.Description("Future delivery time as Unix seconds.")),
+		}, conversationsHandler.ScheduleMessage},
+		{ToolListScheduledMessages, "List pending reservations for the bound credential and channel. Returns only IDs, times and text hashes.", true, false, nil, conversationsHandler.ListScheduledMessages},
+		{ToolCancelScheduledMessage, "Cancel one pending reservation matching the exact ID, delivery time and text hash.", false, true, []mcp.ToolOption{
+			mcp.WithString("scheduled_message_id", mcp.Required()),
+			mcp.WithNumber("post_at", mcp.Required()),
+			mcp.WithString("text_sha256", mcp.Required()),
+		}, conversationsHandler.CancelScheduledMessage},
+	} {
+		const channelPolicy = "SLACK_MCP_SCHEDULING_CHANNELS"
+		if !provider.IsOAuth() || provider.IsBotToken() || os.Getenv(channelPolicy) == "" || !shouldAddTool(reservation.name, enabledTools, channelPolicy) {
+			continue
+		}
+		options := []mcp.ToolOption{
+			mcp.WithDescription(reservation.description),
+			mcp.WithReadOnlyHintAnnotation(reservation.readOnly),
+			mcp.WithDestructiveHintAnnotation(reservation.destructive),
+			mcp.WithIdempotentHintAnnotation(reservation.readOnly),
+			mcp.WithString("channel_id", mcp.Required(), mcp.Description("Exact allowlisted Slack channel ID.")),
+			mcp.WithString("expected_user_id", mcp.Required()),
+			mcp.WithString("expected_team_id", mcp.Required()),
+		}
+		s.AddTool(mcp.NewTool(reservation.name, append(options, reservation.options...)...), reservation.handle)
 	}
 
 	if shouldAddTool(ToolReactionsAdd, enabledTools, "SLACK_MCP_REACTION_TOOL") {
